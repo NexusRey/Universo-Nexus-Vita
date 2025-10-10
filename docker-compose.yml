@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai_ollama
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.11.0
+    container_name: ai_qdrant
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ai_redis
+    restart: unless-stopped
+
+  agent:
+    build: ./services/agent
+    container_name: ai_agent
+    depends_on:
+      - ollama
+      - qdrant
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - API_KEY=${API_KEY}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+    restart: unless-stopped
+
+  evaluator:
+    build: ./services/evaluator
+    container_name: ai_evaluator
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - API_KEY=${API_KEY}
+    restart: unless-stopped
+
+  orchestrator:
+    build: ./services/orchestrator
+    container_name: ai_orchestrator
+    depends_on:
+      - agent
+      - evaluator
+      - redis
+    environment:
+      - API_KEY=${API_KEY}
+      - AGENT_URL=http://agent:8081
+      - EVALUATOR_URL=http://evaluator:8082
+      - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
